@@ -1,0 +1,24 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>NU1903</WarningsNotAsErrors>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <!--
+    NU1903 (System.Security.Cryptography.Xml): NuGet's advisory range hasn't been
+    narrowed to exclude .NET 10.0.0 even though the underlying CVEs were addressed
+    server-side. We don't call any XML signature APIs in this codebase
+    (Identity uses it only as a transitive). Treat as warning, do not fail build.
+  -->
+
+</Project>

@@ -1,0 +1,252 @@
+### IPL Franchise Store — API examples
+### Use with the VS Code "REST Client" extension or JetBrains HTTP client.
+### Run the API first:  cd src/IplStore.Api ; dotnet run
+### Base URL assumes the default Kestrel port below — adjust if yours differs.
+
+@baseUrl = http://localhost:5080/api/v1
+@adminEmail = admin@iplstore.local
+@adminPassword = Admin#12345
+@customerEmail = fan@iplstore.local
+@customerPassword = Fan#12345
+
+### ──────────────────────────────────────────────────────────────────────────
+### AUTH
+### ──────────────────────────────────────────────────────────────────────────
+
+# @name register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+  "email": "newfan@example.com",
+  "fullName": "New Fan",
+  "password": "Passw0rd!"
+}
+
+###
+
+# @name loginCustomer
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{customerEmail}}",
+  "password": "{{customerPassword}}"
+}
+
+###
+@customerToken = {{loginCustomer.response.body.accessToken}}
+@refreshToken = {{loginCustomer.response.body.refreshToken}}
+
+# @name loginAdmin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
+
+###
+@adminToken = {{loginAdmin.response.body.accessToken}}
+
+### Current user profile
+GET {{baseUrl}}/auth/me
+Authorization: Bearer {{customerToken}}
+
+### Refresh the access token (rotation)
+POST {{baseUrl}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refreshToken}}"
+}
+
+### ──────────────────────────────────────────────────────────────────────────
+### CATALOG (Requirement 1 & 2)
+### ──────────────────────────────────────────────────────────────────────────
+
+### Product list (paginated + sortable)
+GET {{baseUrl}}/products?page=1&pageSize=10&sortBy=price&sortDir=asc
+
+### Product details by slug
+GET {{baseUrl}}/products/mumbai-indians-home-jersey-2026
+
+### Franchises (for filters / navigation)
+GET {{baseUrl}}/franchises
+
+### ──────────────────────────────────────────────────────────────────────────
+### SEARCH (Requirement 3) — by name, type, franchise + facets
+### ──────────────────────────────────────────────────────────────────────────
+
+### Free-text + franchise filter
+GET {{baseUrl}}/products/search?q=jersey&franchise=MI
+
+### Type + price range + stock filter, with facet counts in the response
+GET {{baseUrl}}/products/search?type=Cap&minPrice=100&maxPrice=800&inStockOnly=true
+
+### ──────────────────────────────────────────────────────────────────────────
+### CART (Requirement 4) — auth required
+### Replace {{variantId}} with an id from a product details response.
+### ──────────────────────────────────────────────────────────────────────────
+
+### View cart
+GET {{baseUrl}}/cart
+Authorization: Bearer {{customerToken}}
+
+### Add an item (use a real variant id)
+POST {{baseUrl}}/cart/items
+Authorization: Bearer {{customerToken}}
+Content-Type: application/json
+
+{
+  "productVariantId": "REPLACE-WITH-VARIANT-ID",
+  "quantity": 2
+}
+
+### Update a line quantity (0 removes it)
+PATCH {{baseUrl}}/cart/items/REPLACE-WITH-ITEM-ID
+Authorization: Bearer {{customerToken}}
+Content-Type: application/json
+
+{ "quantity": 1 }
+
+### Remove a line
+DELETE {{baseUrl}}/cart/items/REPLACE-WITH-ITEM-ID
+Authorization: Bearer {{customerToken}}
+
+### Empty the cart
+DELETE {{baseUrl}}/cart
+Authorization: Bearer {{customerToken}}
+
+### ──────────────────────────────────────────────────────────────────────────
+### ORDERS & HISTORY (Requirement 5)
+### ──────────────────────────────────────────────────────────────────────────
+
+### Place an order (Idempotency-Key prevents duplicates on retry)
+# @name placeOrder
+POST {{baseUrl}}/orders
+Authorization: Bearer {{customerToken}}
+Idempotency-Key: 11111111-1111-1111-1111-111111111111
+Content-Type: application/json
+
+{
+  "shippingAddress": {
+    "line1": "12 Wankhede Road",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "postalCode": "400020",
+    "country": "India"
+  },
+  "paymentMethod": 3,
+  "couponCode": "WELCOME10"
+}
+
+### Order history (paginated, filterable by status)
+GET {{baseUrl}}/orders?page=1&pageSize=10
+Authorization: Bearer {{customerToken}}
+
+### Order details by number
+GET {{baseUrl}}/orders/ORD-2026-000001
+Authorization: Bearer {{customerToken}}
+
+### Cancel an order (restores stock)
+POST {{baseUrl}}/orders/ORD-2026-000001/cancel
+Authorization: Bearer {{customerToken}}
+Content-Type: application/json
+
+{ "reason": "Changed my mind" }
+
+### ──────────────────────────────────────────────────────────────────────────
+### ADMIN — Product management (Admin role required)
+### ──────────────────────────────────────────────────────────────────────────
+
+### Create a product with variants
+POST {{baseUrl}}/products
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "MI Limited Edition Hoodie",
+  "description": "Premium Mumbai Indians hoodie.",
+  "type": 5,
+  "franchiseId": "REPLACE-WITH-FRANCHISE-ID",
+  "basePrice": 2499,
+  "imageUrl": null,
+  "variants": [
+    { "sku": "MI-HOODIE-M", "size": "M", "color": "Blue", "stock": 25, "priceOverride": null }
+  ]
+}
+
+### Update a product
+PUT {{baseUrl}}/products/REPLACE-WITH-PRODUCT-ID
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "id": "REPLACE-WITH-PRODUCT-ID",
+  "name": "MI Limited Edition Hoodie (2026)",
+  "description": "Updated description.",
+  "basePrice": 2299,
+  "imageUrl": null
+}
+
+### Soft-delete a product
+DELETE {{baseUrl}}/products/REPLACE-WITH-PRODUCT-ID
+Authorization: Bearer {{adminToken}}
+
+### ──────────────────────────────────────────────────────────────────────────
+### BONUS — Coupons, Reviews, Wishlist
+### ──────────────────────────────────────────────────────────────────────────
+
+### Validate a coupon (public)
+POST {{baseUrl}}/coupons/validate
+Content-Type: application/json
+
+{ "code": "WELCOME10", "cartTotal": 2000 }
+
+### Create a coupon (Admin)
+POST {{baseUrl}}/coupons
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "code": "IPL25",
+  "type": 1,
+  "value": 25,
+  "minOrderValue": 1000,
+  "maxDiscount": 750,
+  "expiresAtUtc": "2027-01-01T00:00:00Z",
+  "usageLimit": 500
+}
+
+### List coupons (Admin)
+GET {{baseUrl}}/coupons
+Authorization: Bearer {{adminToken}}
+
+### Add a review (must be a verified buyer of the product)
+POST {{baseUrl}}/products/REPLACE-WITH-PRODUCT-ID/reviews
+Authorization: Bearer {{customerToken}}
+Content-Type: application/json
+
+{ "rating": 5, "title": "Top quality", "body": "Authentic and comfortable." }
+
+### List product reviews
+GET {{baseUrl}}/products/REPLACE-WITH-PRODUCT-ID/reviews
+
+### Wishlist — add / list / remove
+POST {{baseUrl}}/wishlist/REPLACE-WITH-PRODUCT-ID
+Authorization: Bearer {{customerToken}}
+
+###
+GET {{baseUrl}}/wishlist
+Authorization: Bearer {{customerToken}}
+
+###
+DELETE {{baseUrl}}/wishlist/REPLACE-WITH-PRODUCT-ID
+Authorization: Bearer {{customerToken}}
+
+### ──────────────────────────────────────────────────────────────────────────
+### HEALTH
+### ──────────────────────────────────────────────────────────────────────────
+GET http://localhost:5080/health/ready

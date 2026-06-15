@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IplStore.Api/IplStore.Api.csproj" />
+    <Project Path="src/IplStore.Application/IplStore.Application.csproj" />
+    <Project Path="src/IplStore.Domain/IplStore.Domain.csproj" />
+    <Project Path="src/IplStore.Infrastructure/IplStore.Infrastructure.csproj" />
+    <Project Path="src/IplStore.Shared/IplStore.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/IplStore.Api.IntegrationTests/IplStore.Api.IntegrationTests.csproj" />
+    <Project Path="tests/IplStore.Application.Tests/IplStore.Application.Tests.csproj" />
+    <Project Path="tests/IplStore.Architecture.Tests/IplStore.Architecture.Tests.csproj" />
+    <Project Path="tests/IplStore.Domain.Tests/IplStore.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

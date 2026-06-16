@@ -27,11 +27,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (e: string, password: string) => {
-    apply(await api.post<AuthResponse>('/auth/login', { email: e, password }));
+    apply(await api.post<AuthResponse>('/auth/login', { email: e, password: btoa(password) }));
   };
 
   const register = async (e: string, fullName: string, password: string) => {
-    apply(await api.post<AuthResponse>('/auth/register', { email: e, fullName, password }));
+    apply(await api.post<AuthResponse>('/auth/register', { email: e, fullName, password: btoa(password) }));
   };
 
   const logout = () => {

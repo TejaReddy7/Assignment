@@ -27,7 +27,18 @@ public sealed class AuthController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Register(RegisterCommand command, CancellationToken ct)
-        => HandleResult(await _sender.Send(command, ct));
+    {
+        string decodedPassword = command.Password;
+        try
+        {
+            var data = Convert.FromBase64String(command.Password);
+            decodedPassword = System.Text.Encoding.UTF8.GetString(data);
+        }
+        catch { }
+
+        var decodedCommand = command with { Password = decodedPassword };
+        return HandleResult(await _sender.Send(decodedCommand, ct));
+    }
 
     /// <summary>Authenticate with email + password.</summary>
     [HttpPost("login")]
@@ -35,7 +46,18 @@ public sealed class AuthController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
     public async Task<IActionResult> Login(LoginCommand command, CancellationToken ct)
-        => HandleResult(await _sender.Send(command, ct));
+    {
+        string decodedPassword = command.Password;
+        try
+        {
+            var data = Convert.FromBase64String(command.Password);
+            decodedPassword = System.Text.Encoding.UTF8.GetString(data);
+        }
+        catch { }
+
+        var decodedCommand = command with { Password = decodedPassword };
+        return HandleResult(await _sender.Send(decodedCommand, ct));
+    }
 
     /// <summary>Exchange a valid refresh token for a new token pair (rotation).</summary>
     [HttpPost("refresh")]

@@ -70,11 +70,29 @@ public static class DependencyInjection
 
     private static void AddCors(IServiceCollection services, IConfiguration configuration)
     {
-        var origins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-                      ?? new[] { "http://localhost:5173" };
+        var originsList = new List<string>();
+
+        // 1. Array configuration (e.g. from appsettings.json)
+        var originsArray = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+        if (originsArray != null)
+        {
+            originsList.AddRange(originsArray);
+        }
+
+        // 2. Comma-separated string from environment variables
+        var originsString = configuration["Cors:AllowedOrigins"];
+        if (!string.IsNullOrWhiteSpace(originsString))
+        {
+            originsList.AddRange(originsString.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        }
+
+        if (originsList.Count == 0)
+        {
+            originsList.Add("http://localhost:5173");
+        }
 
         services.AddCors(options => options.AddPolicy(CorsPolicy, policy =>
-            policy.WithOrigins(origins)
+            policy.WithOrigins(originsList.Distinct().ToArray())
                 .AllowAnyHeader()
                 .AllowAnyMethod()
                 .WithExposedHeaders("X-Correlation-Id")));

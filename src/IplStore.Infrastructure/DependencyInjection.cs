@@ -66,8 +66,6 @@ public static class DependencyInjection
             .AddEntityFrameworkStores<AppDbContext>()
             .AddDefaultTokenProviders();
 
-        services.AddScoped<IPasswordHasher<ApplicationUser>, AesPasswordHasher>();
-
         services.Configure<JwtOptions>(configuration.GetSection(JwtOptions.SectionName));
         var jwt = configuration.GetSection(JwtOptions.SectionName).Get<JwtOptions>()
                   ?? throw new InvalidOperationException("Jwt configuration section is missing.");

@@ -26,6 +26,8 @@ export interface ProductListItem {
   franchiseId: string;
   franchiseName: string;
   franchiseShortCode: string;
+  defaultVariantId: string | null;
+  variants: ProductVariant[];
 }
 
 export interface ProductVariant {
@@ -87,6 +89,13 @@ export interface SearchResult {
   };
 }
 
+export interface FeaturedProduct {
+  badge: string;
+  reason: string;
+  demandScore: number;
+  product: ProductListItem;
+}
+
 export interface AuthResponse {
   userId: string;
   email: string;
@@ -124,6 +133,8 @@ export interface OrderSummary {
   currency: string;
   itemCount: number;
   placedAtUtc: string;
+  customerEmail?: string | null;
+  customerName?: string | null;
 }
 
 export interface OrderItem {
@@ -147,4 +158,50 @@ export interface OrderDetails {
   currency: string;
   couponCode: string | null;
   placedAtUtc: string;
+}
+
+export interface CouponValidationResult {
+  isValid: boolean;
+  code: string;
+  discount: number;
+  newTotal: number;
+  reason: string | null;
+}
+
+export interface CreatedProduct {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface ReviewItem {
+  id: string;
+  productId: string;
+  customerDisplayName: string;
+  rating: number;
+  title: string;
+  body: string;
+  createdAtUtc: string;
+}
+
+export interface ProductReviews {
+  productId: string;
+  averageRating: number;
+  reviewCount: number;
+  reviews: ReviewItem[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+}
+
+export interface WishlistItem {
+  productId: string;
+  name: string;
+  slug: string;
+  price: number;
+  currency: string;
+  imageUrl: string | null;
+  franchiseShortCode: string;
+  inStock: boolean;
+  addedAtUtc: string;
 }

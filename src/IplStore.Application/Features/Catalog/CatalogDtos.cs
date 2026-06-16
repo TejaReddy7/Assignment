@@ -35,7 +35,11 @@ public sealed record ProductListItemDto(
     bool InStock,
     Guid FranchiseId,
     string FranchiseName,
-    string FranchiseShortCode);
+    string FranchiseShortCode,
+    // The first in-stock variant (or null when none) lets the UI quick-add from a card
+    // without an extra round-trip to the product details endpoint.
+    Guid? DefaultVariantId,
+    IReadOnlyList<ProductVariantDto> Variants);
 
 public sealed record ProductDetailsDto(
     Guid Id,

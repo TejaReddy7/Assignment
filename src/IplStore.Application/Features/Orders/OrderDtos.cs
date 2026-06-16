@@ -28,7 +28,9 @@ public sealed record OrderSummaryDto(
     decimal Total,
     string Currency,
     int ItemCount,
-    DateTime PlacedAtUtc);
+    DateTime PlacedAtUtc,
+    string? CustomerEmail = null,
+    string? CustomerName = null);
 
 public sealed record OrderDetailsDto(
     Guid Id,

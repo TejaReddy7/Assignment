@@ -26,6 +26,23 @@ public static class TestData
         return (product, variant);
     }
 
+    /// <summary>Seeds a product that has two distinct variants (for multi-line cart scenarios).</summary>
+    public static async Task<(Product Product, ProductVariant VariantA, ProductVariant VariantB)> SeedProductWithTwoVariantsAsync(
+        AppDbContext db, int stock = 50, decimal price = 1999m)
+    {
+        var franchise = Franchise.Create("Chennai Super Kings", "CSK", "Chennai", "#FDB913", 2008).Value;
+        db.Franchises.Add(franchise);
+
+        var product = Product.Create("CSK Home Jersey", "Official CSK home jersey.",
+            ProductType.Jersey, franchise.Id, Money.From(price), null).Value;
+        var a = product.AddVariant("CSK-JSY-M", "M", "Yellow", stock).Value;
+        var b = product.AddVariant("CSK-JSY-L", "L", "Yellow", stock).Value;
+        db.Products.Add(product);
+
+        await db.SaveChangesAsync();
+        return (product, a, b);
+    }
+
     public static async Task<Coupon> SeedCouponAsync(AppDbContext db, string code = "SAVE10", decimal percent = 10)
     {
         var coupon = Coupon.Create(code, CouponType.Percentage, percent, null, null,

@@ -3,8 +3,11 @@ using IplStore.Api.Common;
 using IplStore.Application.Features.Orders.CancelOrder;
 using IplStore.Application.Features.Orders.GetOrderByNumber;
 using IplStore.Application.Features.Orders.GetOrders;
+using IplStore.Application.Features.Orders.MarkDelivered;
 using IplStore.Application.Features.Orders.PlaceOrder;
+using IplStore.Application.Features.Orders.ShipOrder;
 using IplStore.Domain.Enums;
+using IplStore.Infrastructure.Identity;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -66,6 +69,26 @@ public sealed class OrdersController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Cancel(string orderNumber, [FromBody] CancelOrderRequest? body, CancellationToken ct)
         => HandleResult(await _sender.Send(new CancelOrderCommand(orderNumber, body?.Reason), ct));
+
+    /// <summary>Admin: mark a Confirmed order as Shipped.</summary>
+    [HttpPost("{orderNumber}/ship")]
+    [Authorize(Roles = Roles.Admin)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Ship(string orderNumber, CancellationToken ct)
+        => HandleResult(await _sender.Send(new ShipOrderCommand(orderNumber), ct));
+
+    /// <summary>Admin: mark a Shipped order as Delivered.</summary>
+    [HttpPost("{orderNumber}/deliver")]
+    [Authorize(Roles = Roles.Admin)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Deliver(string orderNumber, CancellationToken ct)
+        => HandleResult(await _sender.Send(new MarkDeliveredCommand(orderNumber), ct));
 }
 
 public sealed record PlaceOrderRequest(

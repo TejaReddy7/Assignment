@@ -2,6 +2,7 @@ using Asp.Versioning;
 using IplStore.Api.Common;
 using IplStore.Application.Features.Catalog.CreateProduct;
 using IplStore.Application.Features.Catalog.DeleteProduct;
+using IplStore.Application.Features.Catalog.Featured;
 using IplStore.Application.Features.Catalog.GetProductBySlug;
 using IplStore.Application.Features.Catalog.GetProducts;
 using IplStore.Application.Features.Catalog.Search;
@@ -56,6 +57,17 @@ public sealed class ProductsController : ApiControllerBase
         CancellationToken ct = default)
         => HandleResult(await _sender.Send(
             new SearchProductsQuery(q, franchise, type, minPrice, maxPrice, inStockOnly, page, pageSize, sortBy, sortDir), ct));
+
+    /// <summary>
+    /// Featured / trending rail for the storefront. Ranks products by a recency-weighted demand
+    /// score (sales velocity + orders + ratings + newness) and guarantees every category appears
+    /// at least once, so shoppers always see the full range. Each item carries a badge + reason.
+    /// </summary>
+    [HttpGet("featured")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> Featured([FromQuery] int count = 10, CancellationToken ct = default)
+        => HandleResult(await _sender.Send(new GetFeaturedProductsQuery(count), ct));
 
     /// <summary>Product details by slug (e.g. mumbai-indians-home-jersey-2026).</summary>
     [HttpGet("{slug}", Name = "GetProductBySlug")]

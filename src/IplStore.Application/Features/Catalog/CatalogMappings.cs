@@ -17,8 +17,16 @@ public static class CatalogMappings
     public static ProductVariantDto ToDto(this ProductVariant v, Money basePrice) =>
         new(v.Id, v.Sku, v.Size, v.Color, v.StockQuantity, v.IsInStock, v.EffectivePrice(basePrice).ToDto());
 
-    public static ProductListItemDto ToListItemDto(this Product p) =>
-        new(
+    public static ProductListItemDto ToListItemDto(this Product p)
+    {
+        var variants = p.Variants
+            .OrderBy(v => v.Size)
+            .Select(v => v.ToDto(p.BasePrice))
+            .ToList();
+
+        var defaultVariantId = p.Variants.FirstOrDefault(v => v.IsInStock)?.Id;
+
+        return new ProductListItemDto(
             p.Id,
             p.Name,
             p.Slug.Value,
@@ -31,7 +39,10 @@ public static class CatalogMappings
             p.Variants.Any(v => v.IsInStock),
             p.FranchiseId,
             p.Franchise.Name,
-            p.Franchise.ShortCode);
+            p.Franchise.ShortCode,
+            defaultVariantId,
+            variants);
+    }
 
     public static ProductDetailsDto ToDetailsDto(this Product p) =>
         new(

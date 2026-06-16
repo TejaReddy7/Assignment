@@ -15,11 +15,13 @@ public sealed class GetOrdersQueryHandler
 {
     private readonly IAppDbContext _db;
     private readonly ICurrentUser _currentUser;
+    private readonly IIdentityService _identity;
 
-    public GetOrdersQueryHandler(IAppDbContext db, ICurrentUser currentUser)
+    public GetOrdersQueryHandler(IAppDbContext db, ICurrentUser currentUser, IIdentityService identity)
     {
         _db = db;
         _currentUser = currentUser;
+        _identity = identity;
     }
 
     public async Task<Result<PagedResult<OrderSummaryDto>>> Handle(
@@ -33,7 +35,11 @@ public sealed class GetOrdersQueryHandler
         var query = _db.Orders
             .AsNoTracking()
             .Include(o => o.Items)
-            .Where(o => o.CustomerId == customerId);
+            .AsQueryable();
+
+        // Admins see all orders; customers see only their own.
+        if (!_currentUser.IsAdmin)
+            query = query.Where(o => o.CustomerId == customerId);
 
         if (request.Status is { } status)
             query = query.Where(o => o.Status == status);
@@ -46,7 +52,20 @@ public sealed class GetOrdersQueryHandler
             .Take(pagination.PageSize)
             .ToListAsync(cancellationToken);
 
-        var items = orders.Select(o => o.ToSummaryDto()).ToList();
+        IReadOnlyDictionary<Guid, UserDescriptor> usersById = new Dictionary<Guid, UserDescriptor>();
+        if (_currentUser.IsAdmin && orders.Count > 0)
+            usersById = await _identity.GetUsersByIdsAsync(
+                orders.Select(o => o.CustomerId), cancellationToken);
+
+        var items = orders.Select(o =>
+        {
+            var dto = o.ToSummaryDto();
+            if (_currentUser.IsAdmin && usersById.TryGetValue(o.CustomerId, out var user))
+                dto = dto with { CustomerEmail = user.Email, CustomerName = user.FullName };
+            return dto;
+        }).ToList();
+
         return new PagedResult<OrderSummaryDto>(items, pagination.Page, pagination.PageSize, total);
     }
 }
+

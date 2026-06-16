@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, tokenStore } from './api';
 import type { AuthResponse } from './types';
 
@@ -41,6 +41,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmail(null);
     setRoles([]);
   };
+
+  // Reflect server-side session expiry (refresh failed) in the UI.
+  useEffect(
+    () =>
+      tokenStore.onSessionExpired(() => {
+        localStorage.removeItem('ipl_email');
+        localStorage.removeItem('ipl_roles');
+        setEmail(null);
+        setRoles([]);
+      }),
+    [],
+  );
 
   return (
     <AuthContext.Provider

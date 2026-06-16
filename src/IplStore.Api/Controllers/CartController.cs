@@ -3,6 +3,7 @@ using IplStore.Api.Common;
 using IplStore.Application.Features.Cart.AddCartItem;
 using IplStore.Application.Features.Cart.ClearCart;
 using IplStore.Application.Features.Cart.GetCart;
+using IplStore.Application.Features.Cart.MergeCart;
 using IplStore.Application.Features.Cart.RemoveCartItem;
 using IplStore.Application.Features.Cart.UpdateCartItem;
 using MediatR;
@@ -34,6 +35,15 @@ public sealed class CartController : ApiControllerBase
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> AddItem(AddCartItemCommand command, CancellationToken ct)
+        => HandleResult(await _sender.Send(command, ct));
+
+    /// <summary>
+    /// Atomically merge a guest cart (from localStorage) into the user's server cart.
+    /// Called once right after login so the browser avoids N concurrent add calls.
+    /// </summary>
+    [HttpPost("merge")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> Merge(MergeCartCommand command, CancellationToken ct)
         => HandleResult(await _sender.Send(command, ct));
 
     /// <summary>Update a line quantity. Quantity 0 removes the line.</summary>

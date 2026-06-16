@@ -67,6 +67,24 @@ public sealed class IdentityService : IIdentityService
         return (await _userManager.GetRolesAsync(user)).ToList();
     }
 
+    public async Task<IReadOnlyDictionary<Guid, UserDescriptor>> GetUsersByIdsAsync(
+        IEnumerable<Guid> userIds, CancellationToken ct = default)
+    {
+        var ids = userIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<Guid, UserDescriptor>();
+
+        var users = await _userManager.Users
+            .AsNoTracking()
+            .Where(u => ids.Contains(u.Id))
+            .Select(u => new { u.Id, u.Email, u.FullName })
+            .ToListAsync(ct);
+
+        // Roles aren't needed in admin order listing; pass an empty list to avoid N+1 lookups.
+        return users.ToDictionary(
+            u => u.Id,
+            u => new UserDescriptor(u.Id, u.Email!, u.FullName, Array.Empty<string>()));
+    }
+
     public async Task StoreRefreshTokenAsync(Guid userId, string refreshToken, DateTime expiresAtUtc, CancellationToken ct = default)
     {
         var user = await _userManager.FindByIdAsync(userId.ToString());

@@ -123,6 +123,92 @@ public class PurchaseFlowTests
         var foreignResponse = await _client.GetAsync($"/api/v1/orders/{order!.OrderNumber}");
         foreignResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [Fact]
+    public async Task AdminFlow_Ship_Then_Deliver_TransitionsStatus()
+    {
+        // Customer places an order.
+        var customer = await RegisterAndLoginAsync();
+        Authorize(customer.AccessToken);
+        var list = await _client.GetFromJsonAsync<PagedResultDto<ProductListItemView>>("/api/v1/products?pageSize=1");
+        var details = await _client.GetFromJsonAsync<ProductDetailsView>($"/api/v1/products/{list!.Items[0].Slug}");
+        await _client.PostAsJsonAsync("/api/v1/cart/items", new { productVariantId = details!.Variants[0].Id, quantity = 1 });
+        var orderReq = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
+        {
+            Content = JsonContent.Create(new
+            {
+                shippingAddress = new { line1 = "1 Test", city = "Mumbai", state = "MH", postalCode = "400001", country = "India" },
+                paymentMethod = 3,
+                couponCode = (string?)null
+            })
+        };
+        orderReq.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var orderResponse = await _client.SendAsync(orderReq);
+        var order = await orderResponse.Content.ReadFromJsonAsync<OrderView>();
+        order!.StatusName.Should().Be("Confirmed");
+
+        // Non-admin customer cannot ship.
+        var customerShip = await _client.PostAsync($"/api/v1/orders/{order.OrderNumber}/ship", null);
+        customerShip.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+        // Admin logs in and ships the order.
+        var adminLogin = await _client.PostAsJsonAsync("/api/v1/auth/login",
+            new { email = "admin@iplstore.local", password = "Admin#12345" });
+        adminLogin.StatusCode.Should().Be(HttpStatusCode.OK);
+        var adminAuth = await adminLogin.Content.ReadFromJsonAsync<AuthView>();
+        Authorize(adminAuth!.AccessToken);
+
+        var shipResponse = await _client.PostAsync($"/api/v1/orders/{order.OrderNumber}/ship", null);
+        shipResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var shipped = await shipResponse.Content.ReadFromJsonAsync<OrderView>();
+        shipped!.StatusName.Should().Be("Shipped");
+
+        // Cannot deliver again from Confirmed (already Shipped now) — wait, deliver requires Shipped.
+        var deliverResponse = await _client.PostAsync($"/api/v1/orders/{order.OrderNumber}/deliver", null);
+        deliverResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var delivered = await deliverResponse.Content.ReadFromJsonAsync<OrderView>();
+        delivered!.StatusName.Should().Be("Delivered");
+
+        // Cannot ship a delivered order (invalid transition → 400).
+        var retryShip = await _client.PostAsync($"/api/v1/orders/{order.OrderNumber}/ship", null);
+        retryShip.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task AdminListsAllOrders_ButCustomerOnlySeesOwn()
+    {
+        // Customer A places an order.
+        var customer = await RegisterAndLoginAsync();
+        Authorize(customer.AccessToken);
+        var list = await _client.GetFromJsonAsync<PagedResultDto<ProductListItemView>>("/api/v1/products?pageSize=1");
+        var details = await _client.GetFromJsonAsync<ProductDetailsView>($"/api/v1/products/{list!.Items[0].Slug}");
+        await _client.PostAsJsonAsync("/api/v1/cart/items", new { productVariantId = details!.Variants[0].Id, quantity = 1 });
+        var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
+        {
+            Content = JsonContent.Create(new
+            {
+                shippingAddress = new { line1 = "1 St", city = "M", state = "MH", postalCode = "400001", country = "India" },
+                paymentMethod = 3,
+                couponCode = (string?)null
+            })
+        };
+        req.Headers.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        var orderResponse = await _client.SendAsync(req);
+        var order = await orderResponse.Content.ReadFromJsonAsync<OrderView>();
+
+        // Customer list only shows their own orders.
+        var customerHistory = await _client.GetFromJsonAsync<OrderHistoryView>("/api/v1/orders?pageSize=50");
+        customerHistory!.Items.Should().Contain(o => o.OrderNumber == order!.OrderNumber);
+
+        // Admin sees all orders.
+        var adminLogin = await _client.PostAsJsonAsync("/api/v1/auth/login",
+            new { email = "admin@iplstore.local", password = "Admin#12345" });
+        var adminAuth = await adminLogin.Content.ReadFromJsonAsync<AuthView>();
+        Authorize(adminAuth!.AccessToken);
+
+        var adminHistory = await _client.GetFromJsonAsync<OrderHistoryView>("/api/v1/orders?pageSize=50");
+        adminHistory!.Items.Should().Contain(o => o.OrderNumber == order!.OrderNumber);
+    }
 }
 
 [CollectionDefinition("api")]

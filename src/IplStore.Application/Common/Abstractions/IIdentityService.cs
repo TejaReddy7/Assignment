@@ -12,6 +12,7 @@ public interface IIdentityService
     Task<Result<UserDescriptor>> ValidateCredentialsAsync(string email, string password, CancellationToken ct = default);
     Task<Result<UserDescriptor>> FindByIdAsync(Guid userId, CancellationToken ct = default);
     Task<IReadOnlyList<string>> GetRolesAsync(Guid userId, CancellationToken ct = default);
+    Task<IReadOnlyDictionary<Guid, UserDescriptor>> GetUsersByIdsAsync(IEnumerable<Guid> userIds, CancellationToken ct = default);
 
     Task StoreRefreshTokenAsync(Guid userId, string refreshToken, DateTime expiresAtUtc, CancellationToken ct = default);
     Task<Result<UserDescriptor>> ValidateRefreshTokenAsync(string refreshToken, CancellationToken ct = default);

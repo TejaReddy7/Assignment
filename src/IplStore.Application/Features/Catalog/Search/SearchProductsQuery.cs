@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using IplStore.Application.Common.Abstractions;
 using IplStore.Domain.Entities;
 using IplStore.Domain.Enums;
@@ -10,6 +11,8 @@ namespace IplStore.Application.Features.Catalog.Search;
 /// <summary>
 /// Faceted product search by free text (name/description), franchise, type, and price range.
 /// Returns paginated results plus facet counts so a UI can render filter sidebars with numbers.
+/// Supports fuzzy matching with plural/singular stemming and searches across:
+/// Name, Description, Franchise Name, Franchise ShortCode, Franchise City, and Product Type.
 /// </summary>
 public sealed record SearchProductsQuery(
     string? Q = null,
@@ -65,16 +68,165 @@ public sealed class SearchProductsQueryHandler : IRequestHandler<SearchProductsQ
         return new SearchResult(items, pagination.Page, pagination.PageSize, total, facets);
     }
 
+    /// <summary>
+    /// Enhanced text search with stemming/normalization.
+    /// Generates plural/singular variants of each search token and matches against
+    /// Name, Description, Franchise.Name, Franchise.ShortCode, Franchise.City, and Type (as string).
+    /// Multi-word queries use AND logic between words (each word must match somewhere).
+    /// </summary>
     private static IQueryable<Product> ApplyTextFilter(IQueryable<Product> query, string? q)
     {
         if (string.IsNullOrWhiteSpace(q)) return query;
-        var term = q.Trim();
-        // EF Core translates Contains to SQL LIKE — case-insensitive on SQLite/SQL Server defaults.
-        return query.Where(p =>
-            EF.Functions.Like(p.Name, $"%{term}%") ||
-            EF.Functions.Like(p.Description, $"%{term}%") ||
-            EF.Functions.Like(p.Franchise.Name, $"%{term}%"));
+
+        var rawTerms = q.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (rawTerms.Length == 0) return query;
+
+        // For each word, generate stem variants (e.g., "Jerseys" → ["Jerseys", "Jersey"])
+        // Then require ALL words to match somewhere (AND between words, OR between variants of each word).
+        foreach (var rawWord in rawTerms)
+        {
+            var variants = GenerateStemVariants(rawWord);
+            query = query.Where(BuildWordPredicate(variants));
+        }
+
+        return query;
     }
+
+    /// <summary>
+    /// Builds an OR predicate: the product matches if ANY variant of a single word
+    /// appears in ANY of the searchable columns.
+    /// </summary>
+    private static Expression<Func<Product, bool>> BuildWordPredicate(List<string> variants)
+    {
+        var param = Expression.Parameter(typeof(Product), "p");
+        Expression? combined = null;
+
+        foreach (var variant in variants)
+        {
+            var pattern = $"%{variant}%";
+
+            // Build: EF.Functions.Like(p.Name, pattern) || ...Like(p.Description, pattern) || ...
+            var likeMethod = typeof(DbFunctionsExtensions).GetMethod(
+                nameof(DbFunctionsExtensions.Like),
+                new[] { typeof(DbFunctions), typeof(string), typeof(string) })!;
+
+            var efFunctions = Expression.Property(null, typeof(EF), nameof(EF.Functions));
+            var patternExpr = Expression.Constant(pattern);
+
+            // p.Name
+            var nameExpr = Expression.Call(likeMethod, efFunctions,
+                Expression.Property(param, nameof(Product.Name)), patternExpr);
+
+            // p.Description
+            var descExpr = Expression.Call(likeMethod, efFunctions,
+                Expression.Property(param, nameof(Product.Description)), patternExpr);
+
+            // p.Franchise.Name
+            var franchiseProp = Expression.Property(param, nameof(Product.Franchise));
+            var franchiseNameExpr = Expression.Call(likeMethod, efFunctions,
+                Expression.Property(franchiseProp, nameof(Franchise.Name)), patternExpr);
+
+            // p.Franchise.ShortCode
+            var franchiseCodeExpr = Expression.Call(likeMethod, efFunctions,
+                Expression.Property(franchiseProp, nameof(Franchise.ShortCode)), patternExpr);
+
+            // p.Franchise.City
+            var franchiseCityExpr = Expression.Call(likeMethod, efFunctions,
+                Expression.Property(franchiseProp, nameof(Franchise.City)), patternExpr);
+
+            // Combine all column matches with OR for this variant
+            Expression variantMatch = nameExpr;
+            variantMatch = Expression.OrElse(variantMatch, descExpr);
+            variantMatch = Expression.OrElse(variantMatch, franchiseNameExpr);
+            variantMatch = Expression.OrElse(variantMatch, franchiseCodeExpr);
+            variantMatch = Expression.OrElse(variantMatch, franchiseCityExpr);
+
+            // Also match against the ProductType column (stored as string in DB)
+            // Check if variant matches any known ProductType name
+            foreach (var pt in Enum.GetValues<ProductType>())
+            {
+                var typeName = pt.ToString();
+                if (typeName.Contains(variant, StringComparison.OrdinalIgnoreCase) ||
+                    variant.Contains(typeName, StringComparison.OrdinalIgnoreCase))
+                {
+                    // p.Type == ProductType.X
+                    var typeMatch = Expression.Equal(
+                        Expression.Property(param, nameof(Product.Type)),
+                        Expression.Constant(pt));
+                    variantMatch = Expression.OrElse(variantMatch, typeMatch);
+                }
+            }
+
+            combined = combined is null ? variantMatch : Expression.OrElse(combined, variantMatch);
+        }
+
+        return Expression.Lambda<Func<Product, bool>>(combined!, param);
+    }
+
+    /// <summary>
+    /// Generates simple stemming variants for a word to handle common English plural/singular forms.
+    /// E.g. "Jerseys" → ["Jerseys", "Jersey"], "Cap" → ["Cap", "Caps"],
+    ///      "Accessories" → ["Accessories", "Accessory", "Accessorie"].
+    /// This covers the most common e-commerce search typos without needing a full NLP library.
+    /// </summary>
+    private static List<string> GenerateStemVariants(string word)
+    {
+        var variants = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { word };
+        var lower = word.ToLowerInvariant();
+
+        // Strip plural → singular
+        if (lower.EndsWith("ies") && lower.Length > 4)
+        {
+            // "accessories" → "accessory"
+            variants.Add(word[..^3] + "y");
+        }
+        else if (lower.EndsWith("ves") && lower.Length > 4)
+        {
+            // "scarves" → "scarf"
+            variants.Add(word[..^3] + "f");
+        }
+        else if (lower.EndsWith("ses") || lower.EndsWith("xes") || lower.EndsWith("zes") ||
+                 lower.EndsWith("ches") || lower.EndsWith("shes"))
+        {
+            // "matches" → "match", "boxes" → "box"
+            if (lower.EndsWith("ches") || lower.EndsWith("shes"))
+                variants.Add(word[..^2]);
+            else
+                variants.Add(word[..^2]);
+        }
+        else if (lower.EndsWith("s") && !lower.EndsWith("ss") && lower.Length > 2)
+        {
+            // "jerseys" → "jersey", "caps" → "cap"
+            variants.Add(word[..^1]);
+        }
+
+        // Add plural → from singular
+        if (!lower.EndsWith("s"))
+        {
+            if (lower.EndsWith("y") && lower.Length > 2 && !IsVowel(lower[^2]))
+            {
+                // "accessory" → "accessories"
+                variants.Add(word[..^1] + "ies");
+            }
+            else if (lower.EndsWith("f") && lower.Length > 2)
+            {
+                // "scarf" → "scarves"
+                variants.Add(word[..^1] + "ves");
+            }
+            else if (lower.EndsWith("ch") || lower.EndsWith("sh") || lower.EndsWith("x") || lower.EndsWith("z"))
+            {
+                variants.Add(word + "es");
+            }
+            else
+            {
+                variants.Add(word + "s");
+            }
+        }
+
+        return variants.ToList();
+    }
+
+    private static bool IsVowel(char c) => "aeiou".Contains(c);
 
     private static IQueryable<Product> ApplyFilters(IQueryable<Product> query, SearchProductsQuery request)
     {
@@ -119,10 +271,12 @@ public sealed class SearchProductsQueryHandler : IRequestHandler<SearchProductsQ
                 // Relevance heuristic: when a query is present, rank exact/prefix name matches first.
                 if (!string.IsNullOrWhiteSpace(request.Q))
                 {
-                    var term = request.Q.Trim();
+                    var terms = request.Q.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    var primaryTerm = terms[0];
                     return query
-                        .OrderByDescending(p => p.Name == term)
-                        .ThenByDescending(p => p.Name.StartsWith(term))
+                        .OrderByDescending(p => EF.Functions.Like(p.Name, primaryTerm))
+                        .ThenByDescending(p => EF.Functions.Like(p.Name, $"{primaryTerm}%"))
+                        .ThenByDescending(p => EF.Functions.Like(p.Name, $"%{primaryTerm}%"))
                         .ThenByDescending(p => p.AverageRating)
                         .ThenBy(p => p.Name);
                 }

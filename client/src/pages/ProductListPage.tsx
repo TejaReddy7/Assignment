@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import type { FeaturedProduct, Franchise, ProductListItem, SearchResult } from '../types';
@@ -8,6 +8,7 @@ import { useCart, type AddItemInput } from '../cart';
 import heroImg from '../assets/hero.jpg';
 
 const PRODUCT_TYPES = ['Jersey', 'Cap', 'Flag', 'AutographedPhoto', 'Accessory', 'Memorabilia'];
+const DEBOUNCE_MS = 350;
 
 // Builds the add-to-cart payload from a list item using its first in-stock variant.
 function defaultAddInput(p: ProductListItem): AddItemInput | null {
@@ -58,10 +59,16 @@ export function ProductListPage() {
   const [type, setType] = useState('');
   const [loading, setLoading] = useState(false);
   const [addedId, setAddedId] = useState<string | null>(null);
+  const [hasSearched, setHasSearched] = useState(false);
   const { addItem } = useCart();
+
+  // Track latest search params to avoid stale closures
+  const latestSearch = useRef({ q: '', franchise: '', type: '' });
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Featured rail is a discovery aid — only meaningful before the shopper narrows things down.
   const isBrowsing = !q && !franchise && !type;
+  const hasActiveFilters = !!q || !!franchise || !!type;
 
   useEffect(() => {
     api.get<Franchise[]>('/franchises').then(setFranchises).catch(() => {});
@@ -76,24 +83,50 @@ export function ProductListPage() {
     window.setTimeout(() => setAddedId((cur) => (cur === p.id ? null : cur)), 1500);
   };
 
-  const search = async () => {
+  const doSearch = useCallback(async (searchQ: string, searchFranchise: string, searchType: string) => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
-      if (q) params.set('q', q);
-      if (franchise) params.set('franchise', franchise);
-      if (type) params.set('type', type);
+      if (searchQ) params.set('q', searchQ);
+      if (searchFranchise) params.set('franchise', searchFranchise);
+      if (searchType) params.set('type', searchType);
       params.set('pageSize', '24');
-      setResult(await api.get<SearchResult>(`/products/search?${params.toString()}`));
+      const res = await api.get<SearchResult>(`/products/search?${params.toString()}`);
+      // Only apply if this is still the latest search
+      if (latestSearch.current.q === searchQ &&
+          latestSearch.current.franchise === searchFranchise &&
+          latestSearch.current.type === searchType) {
+        setResult(res);
+        setHasSearched(true);
+      }
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    search();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Debounced auto-search: fires whenever q, franchise, or type changes
+  useEffect(() => {
+    latestSearch.current = { q, franchise, type };
+
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+
+    // Dropdown changes (franchise/type) fire immediately; text input is debounced
+    const delay = q !== '' ? DEBOUNCE_MS : 0;
+
+    debounceTimer.current = setTimeout(() => {
+      void doSearch(q, franchise, type);
+    }, delay);
+
+    return () => {
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
+  }, [q, franchise, type, doSearch]);
+
+  const clearAllFilters = () => {
+    setQ('');
+    setFranchise('');
+    setType('');
+  };
 
   return (
     <div>
@@ -103,7 +136,7 @@ export function ProductListPage() {
         <div className="hero-overlay" />
         <div className="hero-content">
           <h1>Gear Up for the Season</h1>
-          <p>Official jerseys, caps, flags & collectibles from all your favourite IPL franchises.</p>
+          <p>Official jerseys, caps, flags &amp; collectibles from all your favourite IPL franchises.</p>
         </div>
       </section>
 
@@ -170,10 +203,9 @@ export function ProductListPage() {
       {/* Search */}
       <div className="search-bar" id="product-search">
         <input
-          placeholder="Search jerseys, caps, flags…"
+          placeholder="Search by name, type, franchise, city…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && search()}
         />
         <select value={franchise} onChange={(e) => setFranchise(e.target.value)}>
           <option value="">All franchises</option>
@@ -187,13 +219,39 @@ export function ProductListPage() {
             <option key={t} value={t}>{t}</option>
           ))}
         </select>
-        <button onClick={search}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ verticalAlign: '-2px', marginRight: '4px' }}>
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-          </svg>
-          Search
-        </button>
+        {hasActiveFilters && (
+          <button className="clear-filters-btn" onClick={clearAllFilters} title="Clear all filters">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+            Clear
+          </button>
+        )}
       </div>
+
+      {/* Active filter chips */}
+      {hasActiveFilters && (
+        <div className="active-filters" id="active-filters">
+          {q && (
+            <span className="filter-chip">
+              <span className="filter-chip-label">Search:</span> {q}
+              <button className="chip-remove" onClick={() => setQ('')} aria-label="Remove search filter">×</button>
+            </span>
+          )}
+          {franchise && (
+            <span className="filter-chip">
+              <span className="filter-chip-label">Franchise:</span> {franchises.find(f => f.shortCode === franchise)?.name || franchise}
+              <button className="chip-remove" onClick={() => setFranchise('')} aria-label="Remove franchise filter">×</button>
+            </span>
+          )}
+          {type && (
+            <span className="filter-chip">
+              <span className="filter-chip-label">Type:</span> {type}
+              <button className="chip-remove" onClick={() => setType('')} aria-label="Remove type filter">×</button>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Result count */}
       {result && (
@@ -212,6 +270,29 @@ export function ProductListPage() {
       {/* Product Grid */}
       {loading ? (
         <div className="loading">Loading products…</div>
+      ) : hasSearched && result && result.items.length === 0 ? (
+        <div className="no-results" id="no-results">
+          <div className="no-results-icon">🔍</div>
+          <h3>No products found</h3>
+          <p>
+            We couldn't find any products matching your search.
+            {q && <> Try a simpler term like <strong>"Jersey"</strong> or <strong>"Cap"</strong>.</>}
+          </p>
+          <div className="no-results-suggestions">
+            <span>Suggestions:</span>
+            <ul>
+              <li>Check the spelling of your search term</li>
+              <li>Try broader keywords (e.g., "Jersey" instead of a long phrase)</li>
+              <li>Remove some filters to expand results</li>
+              <li>Search by franchise name or city (e.g., "Mumbai", "Chennai")</li>
+            </ul>
+          </div>
+          {hasActiveFilters && (
+            <button className="clear-filters-btn large" onClick={clearAllFilters}>
+              Clear all filters
+            </button>
+          )}
+        </div>
       ) : (
         <div className="grid" id="product-grid">
           {result?.items.map((p) => {
